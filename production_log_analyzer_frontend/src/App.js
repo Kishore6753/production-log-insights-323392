@@ -82,11 +82,15 @@ function App() {
   const apiBaseUrl = useMemo(() => {
     // IMPORTANT: env var must be provided by orchestrator/user in CI/deployment.
     // CRA only exposes vars prefixed with REACT_APP_.
-    return process.env.REACT_APP_BACKEND_URL || "";
+    //
+    // Prefer REACT_APP_API_BASE when present (more explicit), fall back to REACT_APP_BACKEND_URL
+    // for compatibility with earlier iterations of this app.
+    return process.env.REACT_APP_API_BASE || process.env.REACT_APP_BACKEND_URL || "";
   }, []);
 
   const timelineBuckets = useMemo(() => {
     // Accept common names used in log-analysis reports.
+    // Current backend returns `report.timeline` (see openapi + runtime).
     // Expected: array of buckets like { ts, start, end, bucket_start, bucket_end, errors, warnings, info, total, count }
     const buckets = pick(report, ["timeline", "timeline_buckets", "time_buckets", "buckets"], []);
     return Array.isArray(buckets) ? buckets : [];
@@ -110,16 +114,33 @@ function App() {
 
   const stats = useMemo(() => {
     // Some versions may use report.stats or report.summary.statistics, etc.
+    // Current backend returns:
+    //   report.summary_statistics.total_events
+    //   report.summary_statistics.counts_by_severity.{critical,high,medium,low}
     const root = report || {};
     const statsObj =
-      pick(root, ["stats", "summary_stats", "summary"], null) ||
+      pick(root, ["summary_statistics", "stats", "summary_stats", "summary"], null) ||
       pick(root, ["statistics"], null) ||
-      pick(pick(root, ["summary"], null), ["statistics", "stats"], null);
+      pick(pick(root, ["summary"], null), ["statistics", "stats", "summary_statistics"], null);
 
-    const totalErrors = safeNumber(pick(statsObj, ["total_errors", "errors", "error_count"], 0));
-    const totalWarnings = safeNumber(pick(statsObj, ["total_warnings", "warnings", "warning_count"], 0));
-    const totalInfo = safeNumber(pick(statsObj, ["total_info", "info", "info_count"], 0));
-    const total = safeNumber(pick(statsObj, ["total", "total_lines", "line_count", "count"], totalErrors + totalWarnings + totalInfo));
+    const countsBySeverity = pick(statsObj, ["counts_by_severity", "counts", "by_severity"], null);
+
+    // Try both flattened and nested representations.
+    const totalErrors = safeNumber(
+      pick(statsObj, ["total_errors", "errors", "error_count"], pick(countsBySeverity, ["critical", "high"], 0)),
+    );
+    const totalWarnings = safeNumber(
+      pick(statsObj, ["total_warnings", "warnings", "warning_count"], pick(countsBySeverity, ["medium"], 0)),
+    );
+    const totalInfo = safeNumber(pick(statsObj, ["total_info", "info", "info_count"], pick(countsBySeverity, ["low"], 0)));
+
+    const total = safeNumber(
+      pick(
+        statsObj,
+        ["total_events", "total", "total_lines", "line_count", "count"],
+        totalErrors + totalWarnings + totalInfo,
+      ),
+    );
 
     return {
       total,
