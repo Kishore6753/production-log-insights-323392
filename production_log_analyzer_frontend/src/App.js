@@ -80,12 +80,26 @@ function App() {
   };
 
   const apiBaseUrl = useMemo(() => {
-    // IMPORTANT: env var must be provided by orchestrator/user in CI/deployment.
-    // CRA only exposes vars prefixed with REACT_APP_.
-    //
-    // Prefer REACT_APP_API_BASE when present (more explicit), fall back to REACT_APP_BACKEND_URL
-    // for compatibility with earlier iterations of this app.
-    return process.env.REACT_APP_API_BASE || process.env.REACT_APP_BACKEND_URL || "";
+    /**
+     * IMPORTANT:
+     * - CRA only exposes vars prefixed with REACT_APP_.
+     * - In many environments no env var is set and CRA proxy is not configured.
+     *
+     * When apiBaseUrl is empty, fetch(`${apiBaseUrl}/api/...`) becomes a same-origin request
+     * to the frontend (port 3000) and will 404, making “Analyze” appear broken.
+     *
+     * To make the app work out-of-the-box in Kavia’s multi-container setup, we fall back to:
+     *   same hostname, backend port 3001
+     *
+     * In production, set REACT_APP_API_BASE (recommended) or REACT_APP_BACKEND_URL.
+     */
+    const explicit = process.env.REACT_APP_API_BASE || process.env.REACT_APP_BACKEND_URL;
+    if (explicit) return explicit.replace(/\/+$/, "");
+
+    if (typeof window !== "undefined" && window.location?.hostname) {
+      return `${window.location.protocol}//${window.location.hostname}:3001`;
+    }
+    return "";
   }, []);
 
   const timelineBuckets = useMemo(() => {
@@ -365,7 +379,15 @@ function App() {
                 className="FileDrop__input"
                 type="file"
                 accept=".log,.txt,.json,.ndjson,.zip,application/zip,application/json,text/plain"
-                onChange={(e) => setSelectedFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                  setSelectedFile(file);
+                  // Clear previous output/errors so the user sees the new run clearly.
+                  setApiError(null);
+                  setParseWarnings([]);
+                  setReport(null);
+                  setFilename("");
+                }}
               />
               <div className="FileDrop__body">
                 <div className="FileDrop__headline">Choose a log file</div>
@@ -386,16 +408,18 @@ function App() {
             <button
               className="Btn Btn--primary Btn--block"
               onClick={analyzeSelectedFile}
-              disabled={!selectedFile || isAnalyzing}
+              disabled={isAnalyzing || !selectedFile}
               type="button"
             >
               {isAnalyzing ? "Analyzing…" : "Analyze logs"}
             </button>
 
             <div className="HelpText">
-              Backend: <span className="Mono">{apiBaseUrl ? apiBaseUrl : "(same origin)"}</span>
+              Backend: <span className="Mono">{apiBaseUrl ? apiBaseUrl : "(not configured)"}</span>
               <div className="HelpText__hint">
-                Set <span className="Mono">REACT_APP_BACKEND_URL</span> to the backend base URL if needed.
+                You can override with <span className="Mono">REACT_APP_API_BASE</span> (recommended) or{" "}
+                <span className="Mono">REACT_APP_BACKEND_URL</span>. If unset, this UI defaults to{" "}
+                <span className="Mono">{typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:3001` : "http://localhost:3001"}</span>.
               </div>
             </div>
 
