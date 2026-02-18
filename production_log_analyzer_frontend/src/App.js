@@ -364,7 +364,7 @@ function App() {
               <input
                 className="FileDrop__input"
                 type="file"
-                accept=".log,.txt,.json,.ndjson,application/json,text/plain"
+                accept=".log,.txt,.json,.ndjson,.zip,application/zip,application/json,text/plain"
                 onChange={(e) => setSelectedFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
               />
               <div className="FileDrop__body">
@@ -377,7 +377,7 @@ function App() {
                       <span>{Math.round(selectedFile.size / 1024)} KB</span>
                     </>
                   ) : (
-                    <span className="Muted">Supported: .log .txt .json .ndjson</span>
+                    <span className="Muted">Supported: .log .txt .json .ndjson .zip</span>
                   )}
                 </div>
               </div>
