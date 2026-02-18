@@ -331,8 +331,24 @@ function App() {
       const res = await fetch(url, { method: "POST", body: form });
 
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Backend returned ${res.status}. ${text || ""}`.trim());
+        // Prefer a clean, actionable message from backend JSON: { detail: "..." }
+        // but still fall back to text for non-JSON error bodies.
+        let message = "";
+        const contentType = res.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+          const body = await res.json().catch(() => null);
+          if (body && typeof body === "object") {
+            if (typeof body.detail === "string") message = body.detail;
+            else if (Array.isArray(body.detail)) message = body.detail.map((d) => JSON.stringify(d)).join("\n");
+            else message = JSON.stringify(body);
+          }
+        } else {
+          message = await res.text().catch(() => "");
+        }
+
+        const suffix = message ? ` ${message}` : "";
+        throw new Error(`Backend returned ${res.status}.${suffix}`.trim());
       }
 
       const data = await res.json();
